@@ -46,3 +46,9 @@ src/graveyard/*
 .Rproj.user
 gapseq.Rproj
 
+# sequence files
+dat/seq/Bacteria/rev
+dat/seq/Bacteria/unrev
+dat/seq/Archaea/rev
+dat/seq/Archaea/unrev
+

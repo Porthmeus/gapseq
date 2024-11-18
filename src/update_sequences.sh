@@ -1,6 +1,14 @@
 #!/bin/bash
 zenodoID=10047603
 
+# determine threads
+OS=$(uname -s)
+if [ "$OS" = "Darwin" -o "$OS" = "FreeBSD" ]; then
+    n_threads=$(sysctl hw.ncpu|cut -f2 -d' ')
+else
+    n_threads=`grep -c ^processor /proc/cpuinfo`
+fi
+
 # taxonomy
 if [[ -z "$1" ]]; then
     taxonomy="Bacteria"
@@ -77,6 +85,34 @@ if [[ $update_req -eq 1 ]]; then
   tar xzf $seqpath/rxn/sequences.tar.gz -C $seqpath/rxn/
   
   echo "Reference sequences updated."
+
+  echo "Creating diamond database"
+  # concat the fasta files for the query
+  touch $seqpath/${taxonomy}_all.fasta
+  # add the user files
+  for fl in $(ls $seqpath/user/*.fasta); do
+      name=$(basename $fl .fasta | tr " " "_")
+      sed "s/>/>user_${name}|/g" $fl >> $seqpath/${taxonomy}_all.fasta
+  done
+  # add the reviewed files
+  for fl in $(ls $seqpath/rev/*.fasta); do
+      name=$(basename $fl .fasta| tr " " "_")
+      sed "s/>/>rev_${name}|/g" $fl >> $seqpath/${taxonomy}_all.fasta
+  done
+  # add the unreviewed files
+  for fl in $(ls $seqpath/unrev/*.fasta| tr " " "_"); do
+      name=$(basename $fl .fasta)
+      sed "s/>/>unrev_${name}|/g" $fl >> $seqpath/${taxonomy}_all.fasta
+  done
+  for fl in $(ls $seqpath/rxn/*.fasta| tr " " "_"); do
+      name=$(basename $fl .fasta)
+      sed "s/>/>rxn_${name}|/g" $fl >> $seqpath/${taxonomy}_all.fasta
+  done
+  diamond makedb --in $seqpath/${taxonomy}_all.fasta -d $seqpath/${taxonomy}_all --threads $n_threads --quiet
+  rm $seqpath/${taxonomy}_all.fasta
+  
+  # create the subunit table
+  Rscript $dir/make_subunitTable
 fi
 
 rm $zen_sums.$taxonomy
