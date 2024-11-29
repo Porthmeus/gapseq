@@ -20,11 +20,11 @@ pwyKey <- "Pathways|Enzyme-Test|seed|kegg" # corresponds to -p all
 dmnd_colnames <- c("qseqid", "sseqid", "pident", "length", "mismatch", "gapopen", "qstart", "qend", "sstart", "send", "evalue", "bitscore")
 
 #### debug ####
-diamond_out <- "./ecoli.fna_prodigal.fasta_blastresult.tsv"
-taxonomy <- "Bacteria"
-taxRange <- "all"
-srcDir <-"./src"
-seqSrc <- 2
+#diamond_out <- "./ecoli.fna_prodigal.fasta_blastresult.tsv"
+#taxonomy <- "Bacteria"
+#taxRange <- "all"
+#srcDir <-"./src"
+#seqSrc <- 2
 
 
 
