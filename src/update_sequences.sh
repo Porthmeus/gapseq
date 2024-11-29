@@ -112,7 +112,8 @@ if [[ $update_req -eq 1 ]]; then
   rm $seqpath/${taxonomy}_all.fasta
   
   # create the subunit table
-  Rscript $dir/make_subunitTable
+  echo "Creating subunit table"
+  Rscript $dir/make_subunitTable.R $seqpath $seqpath/${taxonomy}_subunits.csv
 fi
 
 rm $zen_sums.$taxonomy
