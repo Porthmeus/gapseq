@@ -125,7 +125,7 @@ for(dr in dirs){
             # save the subunit information in a table
             seqID <- sapply(header, function(x) gsub(">", "", strsplit(x,split = " ")[[1]][1]),USE.NAMES = FALSE)
             # get the number of subunits (count the different subunits instead of taking the max) -NA
-            max.subunits <- length(unique(subunits)) - any(is.na(subunits))
+            max.subunits <- length(unique(subunits))# - any(is.na(subunits)) # -any(...) was the idea to not penalize blast due to undefined subunits, yet original code does not check that either
             sub_tab <- data.table(directory = dr,
                                   file = fl,
                                   seqID = seqID,
@@ -141,6 +141,6 @@ for(dr in dirs){
 }
 
 # add a 1 where only NA subunits where detected
-subunits_tab[max_subunit==-Inf, max_subunit := 1]
+#subunits_tab[max_subunit==-Inf, max_subunit := 1]
 fwrite(subunits_tab, args[2])
 

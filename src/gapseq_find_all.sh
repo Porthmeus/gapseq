@@ -385,7 +385,7 @@ create_blastresults(){
     db_file=$seqpath/${taxonomy}_all
     db_bin=$(basename $fasta)
     diamond_out=${db_bin}_blastresult.tsv
-    diamond blastp -q $fasta -d $db_file --outfmt 6 qseqid pident evalue bitscore scovhsp sseqid sstart send --threads $n_threads -o $diamond_out 
+    diamond blastp -q $fasta -d $db_file --outfmt 6 qseqid pident evalue bitscore scovhsp sseqid sstart send qstart qend --threads $n_threads -o $diamond_out 
     cp $diamond_out $output_dir/$diamond_out
 }
 
@@ -416,7 +416,7 @@ echo DEBUG
 echo $(pwd $diamond_out)
 echo "$(pwd $diamond_out)/$diamond_out"
 echo DEBUG
-Rscript $dir/gapseq_find_all.R $diamond_out $taxonomy $taxRange $seqSrc $dir $noSuperpathways $identcutoff $identcutoff_exception $database $subunit_cutoff $bitcutoff $covcutoff $completenessCutoff $completenessCutoffNoHints
+Rscript $dir/gapseq_find_all.R $diamond_out $taxonomy $taxRange $seqSrc $dir $noSuperpathways $identcutoff $identcutoff_exception $database $subunit_cutoff $bitcutoff $covcutoff $completenessCutoff $completenessCutoffNoHints $vagueCutoff
 
 echo $time_blast
 ps -q $$ -o %cpu,%mem,args

@@ -1,12 +1,15 @@
 # Porthmeus
 # 25.10.24
 
+# TODO implement taxRange
+
 # this script takes a output from a diamond blast and reformats it into the expected form of the pathway and reactions tables of gapseq
 print(args)
 
 # libraries
 library(data.table)
 library(digest)
+library(stringr)
 
 # arguments and variables
 args <- commandArgs(trailingOnly = TRUE)
@@ -24,13 +27,14 @@ bitcutoff <- args[11] # cutoff on the bitscore for good blasts
 covcutoff <- args[12] # coverage cutoff - how much needs to be covered of the enzyme in the blast
 completenessCutoff <- args[13] # cutoff for the completeness of the pathway to be considered present, if key reactions are found (default 0.66)
 completenessCutoffNoHints <- args[14] # cutoff for the completeness of the pathway to be considered present if no key reactions are found (default 0.8)
+vagueCutoff <- args[15]
 pwyKey <- "Pathways|Enzyme-Test|seed|kegg" # corresponds to -p all
 
 
-dmnd_colnames <- c("qseqid","pident","evalue","bitscore","scovhsp","sseqid","sstart","send")
+dmnd_colnames <- c("qseqid","pident","evalue","bitscore","scovhsp","sseqid","sstart","send","qstart","qend")
 
 #### debug ####
-#diamond_out <- "./ecoli.fna_prodigal.fasta_blastresult.tsv"
+#diamond_out <- "./ecore.faa_blastresult.tsv"
 #taxonomy <- "Bacteria"
 #taxRange <- "all"
 #srcDir <-"./src"
@@ -206,7 +210,91 @@ rxns2[!is.na(ec_alt) & ec_alt != reaEc,reaEc := ec_alt]
 rxns2[,ec_alt := NULL]
 rxns <- rxns2
 
+# get a table for metacycid/keggid to target database
+# define patterns to look for in the tables
+KO_pattern<-"R[0-9][0-9][0-9][0-9][0-9]"
+EC_pattern<-"[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+"
 
+expandToTable <- function(ids, matches){
+    # small function to save some space
+    # takes a vector of ids and a list of matches (e.g. kegg ids) of the same length as ids
+    # ids will be expanded to the number of matches in each list element and combined to a data table
+    lens <- lapply(matches, length)
+    ids.exp <- lapply(1:length(ids), function(x) rep(ids[x],lens[[x]]))
+    return(unique(data.table(id = unlist(ids.exp),
+                      match = unlist(matches))))
+}
+
+# get the different tables for metacyc
+# 1) Kegg
+meta2kegg <- fread(file.path(srcDir,"..","dat","meta_rea.tbl"))
+meta2kegg <- unique(meta2kegg[,.(id = gsub("\\|","", id), kegg)])
+keggs <- lapply(meta2kegg[,kegg], splitBy, split =",")
+meta2kegg <- expandToTable(meta2kegg[,id],keggs)
+# 2) EC
+meta2ec <- unique(rxns[grep(EC_pattern,reaEc), .(id = reaId, ec = reaEc)])
+
+
+
+if(database == "seed"){
+    # load the database where the data is stored
+    targetDB <- fread(file.path(srcDir, "..","dat","seed_reactions_corrected.tsv"))
+    targetDB <- targetDB[status == "OK",] # filter out reactions which are not ok (whatever that means)
+    targetString <- apply(targetDB, 1, paste, collapse = "_;_") # create a string per row, as we do not know in which string the kegg ids are stored (maybe even in flow text)
+    seed.keggs <- str_extract_all(targetString, KO_pattern) # extract all kegg identifier
+    seed2kegg1 <- expandToTable(targetDB[[1]],seed.keggs)
+
+    # do the same for ec numbers
+    seed.ecs <- str_extract_all(targetString, EC_pattern)
+    seed2ec1 <- expandToTable(targetDB[[1]],seed.ecs)
+
+    # there is a second table for seed to do this, here we know that the information is stored in 'other'
+    targetDB <- fread(file.path(srcDir, "..","dat","mnxref_seed-other.tsv"))
+    seed2kegg2 <- targetDB[grep(KO_pattern, other),.(id = seed, kegg = other)]
+    seed2ec2 <- targetDB[grep(EC_pattern, other), .(id = seed, ec = gsub("-RXN","", other))]
+    # match meta to seed via metanetx
+    meta2mnx2target <- targetDB[grep("-RXN$|^RXN-", other), .(metaId = other, tarId = seed)]
+    # in this table we can also search for mnx references
+
+    # combine both tables and remove duplicates
+    target2kegg <- unique(rbind(seed2kegg1[,.(id,kegg = match)],seed2kegg2))
+    target2ec <- unique(rbind(seed2ec1[,.(id, ec = match)], seed2ec2))
+
+    # and another special table for seed which matches by reaction name
+    #targetDB <- fread(file.path(srcDir, "..","dat","seed_Enzyme_Class_Reactions_Aliases_unique_edited.tsv")) # this returns an empty list
+    
+
+} else if(database == "vmh"){
+    # similar approach as above, search the string of rows instead of a certain column
+    targetDB <- fread(file.path(srcDir,"..","dat","vmh_reactions.tsv"))
+    targetString <- apply(targetDB, 1, paste, collapse = "_;_")
+    vmh.keggs <- str_extract_all(targetString, KO_pattern)
+    target2kegg <- expandToTable(targetDB[[1]], vmh.keggs)
+    colnames(target2kegg)[2] <- "kegg"
+    vmh.ecs <- str_extract_all(targetString, EC_pattern)
+    target2ec <- expandToTable(targetDB[[1]], vmh.ecs)
+    colnames(target2ec)[2] <- "ec"
+
+    # match meta to vmh via metanetx
+    targetDB <- fread(file.path(srcDir, "..","dat","mnxref_bigg-other.tsv"))
+    meta2mnx2target <- targetDB[grep("-RXN$|^RXN-", other), .(metaId = other, tarId = bigg)]
+    
+    # match meta to vmh via bigg
+    #targetDB <- fread(file.path(srcDir, "..","dat", "bigg_reactions.tbl"))
+    #targetString <- apply(targetDB, 1, paste, collapse = "_;_")
+    #vmh.meta <- str_extract_all(targetString, "^RXN-|-RXN$")
+    #target2bigg2meta <- expandToTable(targetDB[[1]], vmh.meta)[,.(metaId = match, tarId = id)]
+    # returns an empty list
+
+}
+# merge the mnx id to the target id
+meta2kegg2target <- merge(meta2kegg[,.(metaId = id, kegg=match)], target2kegg[,.(tarId = id, kegg)], by = "kegg")
+meta2ec2target <- merge(meta2ec[,.(metaId = id, ec)], target2ec[,.(tarId = id, ec)], by = "ec", allow.cartesian = TRUE)
+
+meta2target <- unique(rbind(meta2ec2target[,.(metaId, tarId)],
+                     meta2kegg2target[,.(metaId, tarId)],
+                     target2kegg[,.(metaId= kegg, tarId = id)], # also add kegg ids as possible rea
+                     meta2mnx2target[,.(metaId, tarId)]))
 
 # after this preparation, we can create the results tables for reactions and pathways
 ##### debug #####
@@ -215,6 +303,7 @@ rxns <- rxns2
 
 # load subunit table, which describe the subunits formation of a reaction
 subunits <- fread(file.path(srcDir, "..","dat","seq",taxonomy,"Subunits.csv"))
+#subunits[max_subunit == 0, max_subunit := 1]
 # load diamond result
 dmnd <- fread(diamond_out)
 colnames(dmnd) <-  dmnd_colnames
@@ -247,7 +336,14 @@ dmnd <- merge(dmnd,
                     max_subunit)],
               by.x = c("seq_source","enzyme","sseqid"),
               by.y = c("directory","file","seqID"), all.x=TRUE)
+dmnd[!is.na(subunit),complex := paste0("Subunit ", subunit)] # add subunit numbers
+dmnd[is.na(subunit) & !is.na(max_subunit) ,complex := "Subunit undefined"] # add undefined subunits
 
+# keep for each enzyme only the best blast
+dmnd <- dmnd[order(bitscore, decreasing = TRUE),]
+dmnd.max <- dmnd[,.(max_bitscore = max(bitscore)),by = .(enzyme, subunit)]
+dmnd <- merge(dmnd, dmnd.max, by =c("enzyme","subunit"))
+dmnd <- dmnd[bitscore == max_bitscore,]
 
 # split into three tables, one for identifier derived by EC, one for md5sum and one for rxnID
 dmnd.ec <- dmnd[enzyme %in% rxns[,unique(reaEc),],]
@@ -268,9 +364,62 @@ rxn.dmnd <- rbind(rxn.dmnd.ec, rxn.dmnd.md5, rxn.dmnd.rxn)
 rxn.dmnd[,status := "bad_blast"]
 rxn.dmnd[pident > identcutoff & bitscore > bitcutoff & scovhsp > covcutoff, status := "good_blast"]
 
+# find subunits
+subunits_coverage <- rxn.dmnd[!(is.na(max_subunit)),
+                              .(subunits_coverage = length(unique(subunit))/max(max_subunit),
+                                good.blast.status = any(status == "good_blast")),
+                              by = enzyme]  # note subunits coverage, as well as if at least one good blast is in the list
+covered_enzymes <- subunits_coverage[subunits_coverage>= subunits_coverage & good.blast.status == TRUE, enzyme] # every blast hit which has either no subunits, or with sufficient subunits coverage will get a complex.status = 1
+
+rxn.dmnd[is.na(max_subunit), complex.status := 1]
+rxn.dmnd[enzyme %in% covered_enzymes, complex.status := 1]
+
+# add the database hits
+dmnd2target <- meta2target[metaId %in% rxn.dmnd[,unique(reaId)]]
+dmnd2target <- dmnd2target[,.(dbhit = paste(tarId, collapse = " ")), by =.(reaId = metaId)]
+rxn.dmnd <- merge(rxn.dmnd, dmnd2target, by = "reaId", all.x =TRUE)
+
+# reduce the findings to the relevant fields
+reaction.tbl.dmnd <- rxn.dmnd[,.(rxn = reaId,
+                                 name = reaName,
+                                 ec = reaEc,
+                                 bihit = NA, # this is depricated
+                                 qseqid = sseqid, # the blast was done revers to initial implementation, thus to keep compatibility return
+                                 pident = pident,
+                                 evalue = evalue,
+                                 bitscore = bitscore,
+                                 qcovs = scovhsp, # again reverse s and q, is the equivalent in diamond
+                                 stitle = qseqid, # did not keep the complete title but just id
+                                 sstart = qstart,
+                                 send = qend,
+                                 pathway = id,
+                                 status = status,
+                                 pathway.status = "", # not yet determined
+                                 dbhit = dbhit,
+                                 exception = as.integer(identcutoff==identcutoff_exception),
+                                 complex.status = complex.status)]
 
 
+# now get the pathways which are covered 
+pathway.rxns <- rxns[reaId %in% reaction.tbl.dmnd[,rxn] | spontRea == TRUE,]
+# test which pathways are present
+totalNrInPwy <- rxns[id %in% pathway.rxns[,id],.(reaNr=length(unique(reaId))), by=id]
+foundNrInPwy <- pathway.rxns[,.(foundNr = length(unique(reaId))),by= id]
+badNrInPwy <- pathway.rxns[reaId %in% reaction.tbl.dmnd[status == "bad_blast",rxn], .(badNr = length(unique(reaId))),by= id]
 
-print(args)
+totalFoundPwy <- merge(totalNrInPwy,foundNrInPwy, by = "id")
+totalFoundPwy <- merge(totalFoundPwy,badNrInPwy, by = "id", all.x = TRUE)
+totalFoundPwy[is.na(badNr),badNr := 0]
+totalFoundPwy[,c("Completeness","Good","Bad") := list((foundNr)/reaNr,
+                                                            (foundNr-badNr)/reaNr,
+                                                 badNr/reaNr)]
+# check if a key reaction was found
+totalFoundPwy[, keyFound := FALSE]
+totalFoundPwy[id %in% pathway.rxns[keyRea == TRUE & reaId %in% reaction.tbl.dmnd[,rxn],unique(id)], keyFound := TRUE]
+# make the checks
+totalFoundPwy[,Prediction := FALSE]
+totalFoundPwy[Completeness*100 >= completenessCutoffNoHints, Prediction := TRUE] # test for completeness above threshold
+totalFoundPwy[keyFound == TRUE & Completeness*100 >= completenessCutoff, Prediction := TRUE] # test for treshold pass for pathways with key reactions
+b<-totalFoundPwy[Prediction == TRUE,unique(id)]
 
 print("Not implemented yet")
