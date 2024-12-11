@@ -1,10 +1,9 @@
 # Porthmeus
 # 25.10.24
 
-# TODO implement taxRange
 
 # this script takes a output from a diamond blast and reformats it into the expected form of the pathway and reactions tables of gapseq
-print(args)
+#print(args)
 
 # libraries
 library(data.table)
@@ -15,7 +14,7 @@ library(stringr)
 args <- commandArgs(trailingOnly = TRUE)
 diamond_out <- args[1] # path to the diamond output file
 taxonomy <- args[2] # included taxonomy
-taxRange <- args[3] # included taxonomyRange TODO needs to be implemented
+taxrange <- args[3] # included taxonomyRange, this is used to pre-filter pathways which should be searched
 seqSrc <- args[4] # which sequences should be included user, rev, unrev?
 srcDir <- args[5] # directory of the script to find the data
 noSuperpathways <- args[6] # boolean, should super pathways be included
@@ -27,8 +26,13 @@ bitcutoff <- args[11] # cutoff on the bitscore for good blasts
 covcutoff <- args[12] # coverage cutoff - how much needs to be covered of the enzyme in the blast
 completenessCutoff <- args[13] # cutoff for the completeness of the pathway to be considered present, if key reactions are found (default 0.66)
 completenessCutoffNoHints <- args[14] # cutoff for the completeness of the pathway to be considered present if no key reactions are found (default 0.8)
-vagueCutoff <- args[15]
+vagueCutoff <- args[15] # cutoff maximal allowed of vague reactions in a pathway to be predicted (vague reactions do not have a reference sequence in the database)
+strictCandidates <- args[16] # consider vague reactions as part of the pathway (strictCandidates == false) or not (strictCandidates == true)
+outfile.rxns <- args[17] # output file for the reactions
+outfile.pathways <- args[18] # output file for the patways
 pwyKey <- "Pathways|Enzyme-Test|seed|kegg" # corresponds to -p all
+
+
 
 
 dmnd_colnames <- c("qseqid","pident","evalue","bitscore","scovhsp","sseqid","sstart","send","qstart","qend")
@@ -48,6 +52,10 @@ dmnd_colnames <- c("qseqid","pident","evalue","bitscore","scovhsp","sseqid","sst
 #covcutoff <- 75 # 
 #completenessCutoff <- 66
 #completenessCutoffNoHints <- 80
+#vagueCutoff <- 0.3
+#strictCandidates <- "false"
+#outfile.rxns<- "ecore.faa-dbg-Reactions.tbl"
+#outfile.pathways<- "ecore.faa-dbg-Pathway.tbl"
 
 
 # code
@@ -70,6 +78,18 @@ pathways <- pathways[!is.na(reaId),]
 if(noSuperpathways == "true"){
     pathways <- pathways[!grepl("Super-Pathways", hierarchy),]
 }
+
+# remove pathways outside the taxrange
+if(taxrange != "all"){
+    # get the actual taxrange
+    taxonomies <- fread(file.path(srcDir, "..","dat","taxonomy.tbl"))
+    taxonomies.character <- apply(taxonomies, 1, paste, collapse = "")
+    sel <- grep(taxrange, taxonomies.character, ignore.case = TRUE)
+    taxranges <- paste0("|TAX-",taxonomies[sel, tax], "|")
+    sel <- unique(unlist(lapply(taxranges, grep, x = pathways[,taxrange])))
+    pathways <- pathways[sel,]
+}
+
 
 # helper function to split correctly
 splitBy <- function(x, split){
@@ -210,6 +230,18 @@ rxns2[!is.na(ec_alt) & ec_alt != reaEc,reaEc := ec_alt]
 rxns2[,ec_alt := NULL]
 rxns <- rxns2
 
+# add information for vague reactions 
+if(seqSrc == 1){ # check for unrev only if option is set
+    checkdirs <- c("rev","user","rxn")
+} else if(seqSrc == 2){
+    checkdirs <- c("rev","user","unrev","rxn")
+} 
+seqDir <- file.path(srcDir, "..","dat","seq",taxonomy)
+files <- lapply( checkdirs, function(x) list.files(file.path(seqDir, x)))
+non_vague_rxn <- gsub(".fasta$","",unlist(unique(files)))
+rxns[, vague := !(reaId %in% non_vague_rxn|reaMD5 %in% non_vague_rxn | reaEc %in% non_vague_rxn)]
+
+
 # get a table for metacycid/keggid to target database
 # define patterns to look for in the tables
 KO_pattern<-"R[0-9][0-9][0-9][0-9][0-9]"
@@ -298,8 +330,9 @@ meta2target <- unique(rbind(meta2ec2target[,.(metaId, tarId)],
 
 # after this preparation, we can create the results tables for reactions and pathways
 ##### debug #####
-# rxn.tbl <- fread("ecore-min-Reactions.tbl")
-# pwy.tbl <- fread("ecore-min-Pathways.tbl")
+# rxn.tbl <- fread("test/ecore-all-Reactions.tbl")
+# pwy.tbl <- fread("test/ecore-all-Pathways.tbl")
+#################
 
 # load subunit table, which describe the subunits formation of a reaction
 subunits <- fread(file.path(srcDir, "..","dat","seq",taxonomy,"Subunits.csv"))
@@ -388,38 +421,134 @@ reaction.tbl.dmnd <- rxn.dmnd[,.(rxn = reaId,
                                  pident = pident,
                                  evalue = evalue,
                                  bitscore = bitscore,
-                                 qcovs = scovhsp, # again reverse s and q, is the equivalent in diamond
-                                 stitle = qseqid, # did not keep the complete title but just id
+                                 qcovs = scovhsp, # again reverse s and q, scovhsp is the equivalent to qcovs in diamond
+                                 stitle = qseqid, # did not keep the complete title but just id, maybe something to add at some point
                                  sstart = qstart,
                                  send = qend,
                                  pathway = id,
                                  status = status,
-                                 pathway.status = "", # not yet determined
+                                 pathway.status = as.character(NA), # not yet determined
                                  dbhit = dbhit,
                                  exception = as.integer(identcutoff==identcutoff_exception),
                                  complex.status = complex.status)]
 
 
 # now get the pathways which are covered 
-pathway.rxns <- rxns[reaId %in% reaction.tbl.dmnd[,rxn] | spontRea == TRUE,]
+if(strictCandidates=="true"){
+    pathway.rxns <- rxns[reaId %in% reaction.tbl.dmnd[,rxn] | spontRea == TRUE| vague == TRUE,]
+} else {
+    pathway.rxns <- rxns[reaId %in% reaction.tbl.dmnd[,rxn] | spontRea == TRUE,]
+}
 # test which pathways are present
+# calculate the number of total found, good blasts, bad blasts and vague reactions
 totalNrInPwy <- rxns[id %in% pathway.rxns[,id],.(reaNr=length(unique(reaId))), by=id]
 foundNrInPwy <- pathway.rxns[,.(foundNr = length(unique(reaId))),by= id]
 badNrInPwy <- pathway.rxns[reaId %in% reaction.tbl.dmnd[status == "bad_blast",rxn], .(badNr = length(unique(reaId))),by= id]
+vagueNrInPwy <-pathway.rxns[vague ==TRUE, .(vagueNr = length(unique(reaId))), by = id]
 
 totalFoundPwy <- merge(totalNrInPwy,foundNrInPwy, by = "id")
 totalFoundPwy <- merge(totalFoundPwy,badNrInPwy, by = "id", all.x = TRUE)
+totalFoundPwy <- merge(totalFoundPwy,vagueNrInPwy, by = "id", all.x = TRUE)
+
 totalFoundPwy[is.na(badNr),badNr := 0]
-totalFoundPwy[,c("Completeness","Good","Bad") := list((foundNr)/reaNr,
+totalFoundPwy[is.na(vagueNr),vagueNr := 0]
+totalFoundPwy[,c("Completeness","Good","Bad","Vague") := list((foundNr)/reaNr,
                                                             (foundNr-badNr)/reaNr,
-                                                 badNr/reaNr)]
+                                                            badNr/reaNr,
+                                                            vagueNr/reaNr)]
 # check if a key reaction was found
 totalFoundPwy[, keyFound := FALSE]
-totalFoundPwy[id %in% pathway.rxns[keyRea == TRUE & reaId %in% reaction.tbl.dmnd[,rxn],unique(id)], keyFound := TRUE]
-# make the checks
-totalFoundPwy[,Prediction := FALSE]
-totalFoundPwy[Completeness*100 >= completenessCutoffNoHints, Prediction := TRUE] # test for completeness above threshold
-totalFoundPwy[keyFound == TRUE & Completeness*100 >= completenessCutoff, Prediction := TRUE] # test for treshold pass for pathways with key reactions
-b<-totalFoundPwy[Prediction == TRUE,unique(id)]
+totalFoundPwy[id %in% pathway.rxns[keyRea == TRUE & reaId %in% reaction.tbl.dmnd[,rxn],id], keyFound := TRUE]
 
-print("Not implemented yet")
+# make the checks - the order matters here, so be careful when changed
+totalFoundPwy[,c("Prediction","pathway.status") := list(FALSE,as.character(NA))]
+# test for treshold pass for pathways with key reactions
+totalFoundPwy[keyFound == TRUE & Completeness*100 >= completenessCutoff & Vague <= vagueCutoff,
+              c("Prediction", "pathway.status") := list(TRUE, "keyenzyme")]
+# test for completeness above threshold
+totalFoundPwy[Completeness*100 >= completenessCutoffNoHints & Vague <= vagueCutoff,
+              c("Prediction", "pathway.status") := list(TRUE, "threshold")] 
+# test for full completeness
+totalFoundPwy[Completeness == 1 & Vague <= vagueCutoff,
+              c("Prediction", "pathway.status") := list(TRUE, "full")]
+
+# create the correct output
+# get the pathway name
+pwy.id2name <- unique(pathways[,.(ID=id, name)])
+setkey(pwy.id2name,"ID")
+# get the number of key reactions
+pwy.id2foundKeys <- pathway.rxns[keyRea == TRUE & reaId %in% reaction.tbl.dmnd[,rxn],.(KeyReactions = .N), by =.(ID = id)]
+setkey(pwy.id2foundKeys, "ID")
+pwy.id2keys <- rxns[keyRea ==TRUE, .(KeyReactions = .N), by = .(ID = id)]
+setkey(pwy.id2keys, "ID")
+
+pathways.out <- totalFoundPwy[,.(ID = id,
+                                 name = pwy.id2name[id,name],
+                                 Prediction,
+                                 Completeness,
+                                 VagueReactions = vagueNr,
+                                 KeyReactions = pwy.id2keys[id,KeyReactions],
+                                 KeyReactionsFound = pwy.id2foundKeys[id,KeyReactions]
+                                 )]
+# remove NAs and replace with 0
+pathways.out[is.na(VagueReactions), VagueReactions :=0]
+pathways.out[is.na(KeyReactions), KeyReactions :=0]
+pathways.out[is.na(KeyReactionsFound), KeyReactionsFound :=0]
+
+# add the reactions found in each pathway
+pathways.out <- merge(pathways.out,
+      pathway.rxns[spontRea == FALSE & vague == FALSE, .(ReactionsFound = paste(unique(reaId), collapse =" ")), by = id],
+      by.x = "ID", by.y = "id")
+
+
+# now add the reactions without blast support but predicted by the pathway completeness to the reactions table
+# first add the pathway status to the list of the of blast reactions
+setkey(totalFoundPwy, "id")
+reaction.tbl.dmnd[,pathway.status := totalFoundPwy[pathway, pathway.status]]
+
+# now add all the reactions which are not in the original blast result
+predicted.rxns <- rxns[id %in% pathways.out[Prediction == TRUE,unique(ID)]]
+predicted.rxns <- predicted.rxns[!(paste(reaId,id, sep = "_;_") %in% reaction.tbl.dmnd[, paste(rxn, pathway, sep = "_;_")]),]
+predicted.rxns <- merge(predicted.rxns, totalFoundPwy[,.(id, pathway.status)], by = "id", all.x = TRUE)
+# add status of the reaction - the order matters here
+predicted.rxns[,status := "no_blast"]
+predicted.rxns[vague == TRUE, status := "no_seq_data"]
+predicted.rxns[spontRea == TRUE, status := "spontaneous"]
+# add the target hits to the reactions
+predicted.rxns <- merge(predicted.rxns, meta2target[,.(dbhit = paste(tarId, collapse = " ")), by = metaId], by.x = "reaId", by.y = "metaId")
+
+# create the actual table
+reaction.tbl.pred <- predicted.rxns[,.(rxn = reaId,
+                                 name = reaName,
+                                 ec = reaEc,
+                                 bihit = NA, # this is depricated
+                                 qseqid = "",
+                                 pident = "",
+                                 evalue = "",
+                                 bitscore = "",
+                                 qcovs = "", 
+                                 stitle = "",
+                                 sstart = "",
+                                 send = "",
+                                 pathway = id,
+                                 status,
+                                 pathway.status, 
+                                 dbhit = dbhit,
+                                 exception = as.integer(identcutoff==identcutoff_exception),
+                                 complex.status = as.character(NA))]
+reaction.tbl.out <- rbind(reaction.tbl.dmnd,reaction.tbl.pred)
+
+# write the files to disc
+fwrite(reaction.tbl.out, file = outfile.rxns, sep ="\t")
+fwrite(pathways.out, file = outfile.pathways, sep = "\t")
+
+
+
+#### testing ####
+#b<-totalFoundPwy[Prediction == TRUE,unique(id)]
+#sum(b %in% pwy.tbl[, ID])
+#sum(pwy.tbl[Prediction == T, ID] %in% b)
+#intersect(b, pwy.tbl[Prediction == T,ID])
+#msng <- setdiff( pwy.tbl[Prediction == T,ID],b)
+#totalFoundPwy[id %in% msng,]
+#print("Not implemented yet")

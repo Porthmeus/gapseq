@@ -475,7 +475,7 @@ else
 
     # function to get database hits for ec number
     getDBhit(){
-        kegg=$(grep -wFe "$rea" $metaRea | awk -F "\t" {'print $5'})
+        kegg=$(grep -wFe "$rea" $metaRea | awk -F "\t" {'print $5'}) # $rea == metacyc rxnID
         altec=""
 
         for i in "${!ec[@]}"; do

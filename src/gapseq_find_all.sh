@@ -416,7 +416,26 @@ echo DEBUG
 echo $(pwd $diamond_out)
 echo "$(pwd $diamond_out)/$diamond_out"
 echo DEBUG
-Rscript $dir/gapseq_find_all.R $diamond_out $taxonomy $taxRange $seqSrc $dir $noSuperpathways $identcutoff $identcutoff_exception $database $subunit_cutoff $bitcutoff $covcutoff $completenessCutoff $completenessCutoffNoHints $vagueCutoff
+
+[ -z "$output_suffix" ] && output_suffix=$pathways
+
+Rscript $dir/gapseq_find_all.R $diamond_out $taxonomy $taxRange $seqSrc $dir $noSuperpathways $identcutoff $identcutoff_exception $database $subunit_cutoff $bitcutoff $covcutoff $completenessCutoff $completenessCutoffNoHints $vagueCutoff $strictCandidates $output_dir/${fastaID}-$output_suffix-Reactions.tbl $output_dir/${fastaID}-$output_suffix-Pathways.tbl
+
+
+# add gapseq version and sequence database status to table comments head
+gapseq_version=$($dir/.././gapseq -v | head -n 1)
+seqdb_version=`md5sum $dir/../dat/seq/$taxonomy/rev/sequences.tar.gz | cut -c1-7`
+seqdb_date=$(stat -c %y $dir/../dat/seq/$taxonomy/rev/sequences.tar.gz | cut -c1-10)
+
+sed -i "1s/^/# $gapseq_version\n/" $output_dir/${fastaID}-$output_suffix-Reactions.tbl
+sed -i "2s/^/# Sequence DB md5sum: $seqdb_version ($seqdb_date, $taxonomy)\n/" $output_dir/${fastaID}-$output_suffix-Reactions.tbl
+sed -i "3s/^/# Genome format: $input_mode\n/" $output_dir/${fastaID}-$output_suffix-Reactions.tbl
+sed -i "1s/^/# $gapseq_version\n/" $output_dir/${fastaID}-$output_suffix-Pathways.tbl
+sed -i "2s/^/# Sequence DB md5sum: $seqdb_version ($seqdb_date, $taxonomy)\n/" $output_dir/${fastaID}-$output_suffix-Pathways.tbl
+sed -i "3s/^/# Genome format: $input_mode\n/" $output_dir/${fastaID}-$output_suffix-Pathways.tbl
+
+# cleaning
+[[ -s "$tmp_fasta" ]] && rm "$tmp_fasta"
 
 echo $time_blast
 ps -q $$ -o %cpu,%mem,args
