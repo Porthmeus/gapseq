@@ -407,6 +407,7 @@ else
         if [[ ! -f $seqpath/rev/sequences.tar.gz  ]] || [[ ! -f $seqpath/unrev/sequences.tar.gz ]] || [[ ! -f $seqpath/rxn/sequences.tar.gz ]]; then
             echo ATTENTION: gapseq sequence archives are missing! Sequences will be needed to be downloaded from uniprot directly which is rather slow.
         fi
+
     fi
     download_log=$(mktemp -p $tmpdir) # remember downloaded files
     function already_downloaded(){ 
@@ -698,6 +699,7 @@ else
                 reaNameHash=$(echo -n "$reaName" | md5sum | awk '{print $1}')
                 echo $reaName
                 echo $reaNameHash
+
                 # check if sequence is not available => try to download
                 if [[ (! -f $seqpath/rev/$reaNameHash.fasta  || "$update_manually" = true) && "$force_offline" = false ]]; then
                     if ! already_downloaded "$seqpath/rev/$reaNameHash.fasta"; then
@@ -734,6 +736,7 @@ else
                     fi
                 fi
             fi
+
 
             # sequence by gene name
             if [[ -n "$geneName" ]] && [[ -n "$geneRef" ]] && [[ "$use_gene_seq" = true ]]; then

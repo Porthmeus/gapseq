@@ -51,7 +51,7 @@ Rhamnose	cpd00396	"RHAMCAT-PWY" | "PWY-6713" | "PWY-6714"	5	TRUE		Saccharides
 L-Tryptophan	cpd00065	!("TRPSYN-PWY2" | "TRPSYN-PWY")	0.1	TRUE		Amino acids
 L-Histidine	cpd00119	!"HISTSYN-PWY"	0.1	TRUE		Amino acids
 L-Serine	cpd00054	!"SERSYN-PWY"	0.1	TRUE		Amino acids
-L-Arginine	cpd00051	!("ARGSYN-PWY" | "ARGSYNBSUB-PWY" | "PWY-5154" | "PWY-7400")	0.1	TRUE		Amino acids
+L-Arginine	cpd00051	!("ARGSYN-PWY" | "ARGSYNBSUB-PWY" | "PWY-5154" | "PWY-7400" | "ARGSYN-SUCC-PWY")	0.1	TRUE		Amino acids
 L-Asparagine	cpd00132	!("ASPARAGINE-BIOSYNTHESIS" | "ASPARAGINESYN-PWY" | "PWY490-4")	0.1	TRUE		Amino acids
 L-Glutamine	cpd00053	!"GLNSYN-PWY"	0.1	TRUE	EC 6.3.1.2	Amino acids
 Glycine	cpd00033	!("GLYSYN-PWY" | "GLYSYN-ALA-PWY" | "GLYSYN-THR-PWY")	0.1	TRUE		Amino acids
@@ -63,7 +63,7 @@ L-Lysine	cpd00039	!("DAPLYSINESYN-PWY" | "PWY-2941" | "PWY-2942" | "PWY-3081" | 
 L-Methionine	cpd00060	!("HOMOSER-METSYN-PWY" | "PWY-702" | "HSERMETANA-PWY" | "PWY-7977")	0.1	TRUE		Amino acids
 L-Phenylalanine	cpd00066	!((rxn01256 & rxn01000 & (rxn00493 | rxn21134 | rxn28060 | rxn38254)) | "PWY-3462" | "PWY-7432")	0.1	TRUE		Amino acids
 L-Proline	cpd00129	!("PROSYN-PWY" | "PWY-3341")	0.1	TRUE		Amino acids
-L-Threonine	cpd00161	!("HOMOSER-THRESYN-PWY" | "THRBIOSYN-GS")	0.1	TRUE	Either MetaCycs HOMOSER-THRESYN-PWY (from L-homoserine to Thr) or gapseq connected pathway of the same rout but together with L-Homoserine synthesis.	Amino acids
+L-Threonine	cpd00161	!("HOMOSER-THRESYN-PWY" | "THRBIOSYN-GS")	0.1	TRUE	Either MetaCycs HOMOSER-THRESYN-PWY (from L-homoserine to Thr) or gapseq connected pathway of the same route but together with L-Homoserine synthesis.	Amino acids
 L-Tyrosine	cpd00069	!("TYRSYN" | "PWY-3461" | "PWY-6120" | "PWY-6134")	0.1	TRUE		Amino acids
 L-Valine	cpd00156	!"VALSYN-PWY"	0.1	TRUE		Amino acids
 						
@@ -77,7 +77,6 @@ Acetate	cpd00029	rxn00875 & rxn00225 & rxn00173 & rxn90001	20	TRUE	EC 2.8.3.8, E
 Acetate	cpd00029	"METH-ACETATE-PWY"	25	TRUE	Methanogenisis from acetate	Organic acids
 Succinate	cpd00036	"PWY-5677"	10	TRUE	Succinate fermentation to butyrate	Organic acids
 Succinate	cpd00036	(rxn00602 | rxn01996) & rxn90096 & rxn09174	10	TRUE	Succinate transformation to propionate (Na+ exporting). Part of PWY-8086	Organic acids
-Methanol	cpd00116	"CO2FORM-PWY" | "PWY-6966" | "PWY-6510" | "PWY-6509" | "PWY-5506"	20	TRUE	Methanol in methanogenesis or methanol oxidation	Alcohols
 Formate	cpd00047	"PWY-7868"	20	TRUE	coenzyme B/coenzyme M regeneration V (formate-dependent) involved in methanogenesis	Organic acids
 						
 sulfoquinovose	cpd22614	"PWY-7446" | "PWY-7722"	10	TRUE		Secondary plant metabolites
