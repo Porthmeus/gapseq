@@ -1,3 +1,4 @@
+name: gapseq
 channels:
   - conda-forge
   - bioconda
@@ -7,6 +8,7 @@ dependencies:
   - r
   - perl
   - parallel
+  - prodigal
   - gawk
   - sed
   - grep
@@ -21,8 +23,10 @@ dependencies:
   - glpk
   - hmmer
   - blast
+  - diamond
   - bioconda::libsbml 
   - r-data.table
+  - r-digest
   - r-stringr
   - r-stringi
   - r-getopt
