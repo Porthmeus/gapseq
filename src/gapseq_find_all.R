@@ -40,7 +40,7 @@ dmnd_colnames <- c("qseqid","pident","evalue","bitscore","scovhsp","sseqid","sst
 #### debug ####
 #diamond_out <- "./ecore.faa_blastresult.tsv"
 #taxonomy <- "Bacteria"
-#taxRange <- "all"
+#taxrange <- "all"
 #srcDir <-"./src"
 #noSuperpathways <- "true"
 #seqSrc <- 2
@@ -85,7 +85,7 @@ if(taxrange != "all"){
     taxonomies <- fread(file.path(srcDir, "..","dat","taxonomy.tbl"))
     taxonomies.character <- apply(taxonomies, 1, paste, collapse = "")
     sel <- grep(taxrange, taxonomies.character, ignore.case = TRUE)
-    taxranges <- paste0("|TAX-",taxonomies[sel, tax], "|")
+    taxranges <- paste0("\\|TAX-",taxonomies[sel, tax], "\\|")
     sel <- unique(unlist(lapply(taxranges, grep, x = pathways[,taxrange])))
     pathways <- pathways[sel,]
 }
@@ -287,13 +287,22 @@ if(database == "seed"){
     # match meta to seed via metanetx
     meta2mnx2target <- targetDB[grep("-RXN$|^RXN-", other), .(metaId = other, tarId = seed)]
     # in this table we can also search for mnx references
+    
+    # for ec-numbers there is even a third table to look for, so lets do this
+    targetDB <- fread(file.path(srcDir, "..","dat","seed_Enzyme_Class_Reactions_Aliases_unique_edited.tsv"))
+    seed2ec3 <- targetDB[grep(EC_pattern, `External ID`),.(id = `MS ID`, ec = `External ID`)]
+    length(unique(seed2ec3[,ec]))
+    seed2ec3 <- seed2ec3[,.(id = unique(unlist(strsplit(id, split = "\\|")))), by = ec][,.(id,ec)]
+
 
     # combine both tables and remove duplicates
     target2kegg <- unique(rbind(seed2kegg1[,.(id,kegg = match)],seed2kegg2))
-    target2ec <- unique(rbind(seed2ec1[,.(id, ec = match)], seed2ec2))
+    target2ec <- unique(rbind(seed2ec1[,.(id, ec = match)], seed2ec2, seed2ec3))
 
-    # and another special table for seed which matches by reaction name
-    #targetDB <- fread(file.path(srcDir, "..","dat","seed_Enzyme_Class_Reactions_Aliases_unique_edited.tsv")) # this returns an empty list
+    # and another table which matches seed2seed
+    seed.rxns <- unique(splitBy(split = ",",pathways[source == "seed" & reaId != "", paste(reaId, collapse =",")]))
+    target2seed <- data.table(metaId = seed.rxns,
+                              tarId = seed.rxns)
     
 
 } else if(database == "vmh"){
@@ -310,6 +319,12 @@ if(database == "seed"){
     # match meta to vmh via metanetx
     targetDB <- fread(file.path(srcDir, "..","dat","mnxref_bigg-other.tsv"))
     meta2mnx2target <- targetDB[grep("-RXN$|^RXN-", other), .(metaId = other, tarId = bigg)]
+
+    # match seed to vmh 
+    target2seed <- data.table(metaId = c(),
+                              tarId= c()) # not implemented yet
+    warning("No SEED to VMH conversion implemented yet!")
+    
     
     # match meta to vmh via bigg
     #targetDB <- fread(file.path(srcDir, "..","dat", "bigg_reactions.tbl"))
@@ -323,15 +338,16 @@ if(database == "seed"){
 meta2kegg2target <- merge(meta2kegg[,.(metaId = id, kegg=match)], target2kegg[,.(tarId = id, kegg)], by = "kegg")
 meta2ec2target <- merge(meta2ec[,.(metaId = id, ec)], target2ec[,.(tarId = id, ec)], by = "ec", allow.cartesian = TRUE)
 
-meta2target <- unique(rbind(meta2ec2target[,.(metaId, tarId)],
-                     meta2kegg2target[,.(metaId, tarId)],
-                     target2kegg[,.(metaId= kegg, tarId = id)], # also add kegg ids as possible rea
-                     meta2mnx2target[,.(metaId, tarId)]))
+meta2target <- unique(rbind(meta2ec2target[,.(metaId, tarId)], # metacyc to target via ec number
+                     meta2kegg2target[,.(metaId, tarId)], # metacyc to target via kegg number
+                     target2kegg[,.(metaId= kegg, tarId = id)], # kegg to target
+                     target2seed[,.(metaId, tarId)], # seed to target
+                     meta2mnx2target[,.(metaId, tarId)])) # metacyc to target via metanetx
 
 # after this preparation, we can create the results tables for reactions and pathways
 ##### debug #####
-# rxn.tbl <- fread("test/ecore-all-Reactions.tbl")
-# pwy.tbl <- fread("test/ecore-all-Pathways.tbl")
+# rxn.tbl <- fread("test/ecore-min-Reactions.tbl")
+# pwy.tbl <- fread("test/ecore-min-Pathways.tbl")
 #################
 
 # load subunit table, which describe the subunits formation of a reaction
@@ -372,11 +388,11 @@ dmnd <- merge(dmnd,
 dmnd[!is.na(subunit),complex := paste0("Subunit ", subunit)] # add subunit numbers
 dmnd[is.na(subunit) & !is.na(max_subunit) ,complex := "Subunit undefined"] # add undefined subunits
 
-# keep for each enzyme only the best blast
-dmnd <- dmnd[order(bitscore, decreasing = TRUE),]
-dmnd.max <- dmnd[,.(max_bitscore = max(bitscore)),by = .(enzyme, subunit)]
-dmnd <- merge(dmnd, dmnd.max, by =c("enzyme","subunit"))
-dmnd <- dmnd[bitscore == max_bitscore,]
+## keep for each enzyme only the best blast
+#dmnd <- dmnd[order(bitscore, decreasing = TRUE),]
+#dmnd.max <- dmnd[,.(max_bitscore = max(bitscore)),by = .(enzyme, subunit)]
+#dmnd <- merge(dmnd, dmnd.max, by =c("enzyme","subunit"))
+#dmnd <- dmnd[bitscore == max_bitscore,]
 
 # split into three tables, one for identifier derived by EC, one for md5sum and one for rxnID
 dmnd.ec <- dmnd[enzyme %in% rxns[,unique(reaEc),],]
@@ -485,7 +501,7 @@ setkey(pwy.id2keys, "ID")
 pathways.out <- totalFoundPwy[,.(ID = id,
                                  name = pwy.id2name[id,name],
                                  Prediction,
-                                 Completeness,
+                                 Completeness = Completeness*100,
                                  VagueReactions = vagueNr,
                                  KeyReactions = pwy.id2keys[id,KeyReactions],
                                  KeyReactionsFound = pwy.id2foundKeys[id,KeyReactions]
@@ -496,9 +512,9 @@ pathways.out[is.na(KeyReactions), KeyReactions :=0]
 pathways.out[is.na(KeyReactionsFound), KeyReactionsFound :=0]
 
 # add the reactions found in each pathway
-pathways.out <- merge(pathways.out,
+pathways.out <- unique(merge(pathways.out,
       pathway.rxns[spontRea == FALSE & vague == FALSE, .(ReactionsFound = paste(unique(reaId), collapse =" ")), by = id],
-      by.x = "ID", by.y = "id")
+      by.x = "ID", by.y = "id"))
 
 
 # now add the reactions without blast support but predicted by the pathway completeness to the reactions table
@@ -536,19 +552,8 @@ reaction.tbl.pred <- predicted.rxns[,.(rxn = reaId,
                                  dbhit = dbhit,
                                  exception = as.integer(identcutoff==identcutoff_exception),
                                  complex.status = as.character(NA))]
-reaction.tbl.out <- rbind(reaction.tbl.dmnd,reaction.tbl.pred)
+reaction.tbl.out <- unique(rbind(reaction.tbl.dmnd,reaction.tbl.pred))
 
 # write the files to disc
 fwrite(reaction.tbl.out, file = outfile.rxns, sep ="\t")
 fwrite(pathways.out, file = outfile.pathways, sep = "\t")
-
-
-
-#### testing ####
-#b<-totalFoundPwy[Prediction == TRUE,unique(id)]
-#sum(b %in% pwy.tbl[, ID])
-#sum(pwy.tbl[Prediction == T, ID] %in% b)
-#intersect(b, pwy.tbl[Prediction == T,ID])
-#msng <- setdiff( pwy.tbl[Prediction == T,ID],b)
-#totalFoundPwy[id %in% msng,]
-#print("Not implemented yet")

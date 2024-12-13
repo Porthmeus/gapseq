@@ -412,10 +412,10 @@ check_for_updates
 #echo 7
 create_blastresults
 #echo 8
-echo DEBUG
-echo $(pwd $diamond_out)
-echo "$(pwd $diamond_out)/$diamond_out"
-echo DEBUG
+#echo DEBUG
+#echo $(pwd $diamond_out)
+#echo "$(pwd $diamond_out)/$diamond_out"
+#echo DEBUG
 
 [ -z "$output_suffix" ] && output_suffix=$pathways
 
